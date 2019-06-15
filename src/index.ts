@@ -1,24 +1,6 @@
+import { ValidatorOptions, DEFAULT_OPTIONS } from 'options';
 type FormField = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
-interface ValidatorOptions {
-    validateImmediately: boolean,
-    cssClasses: {
-        'errorContainer' : string,
-    },
-    translations: {
-        'defaultError' : string,
-        'valueMissing' : string,
-        'badInput' : string,
-        'patternMismatch' : string,
-        'rangeOverflow' : string,
-        'rangeUnderflow' : string,
-        'stepMismatch' : string,
-        'tooLong' : string,
-        'tooShort' : string,
-        'typeMismatch' : string,
-        [key: string] : string,
-    },
-}
 
 interface ValidityStateDux extends ValidityState {
     [key: string] : boolean,
@@ -31,44 +13,6 @@ interface ValidatorFunction {
     ) : string | null;
 }
 
-const DEFAULT_OPTIONS : ValidatorOptions = {
-    validateImmediately: true,
-    cssClasses: {
-        errorContainer: 'errors',
-    },
-    translations: {
-        'defaultError': 'Field is invalid',
-        'valueMissing': 'Field cannot be empty',
-        'badInput' : 'Value is not a ${type}',
-        'patternMismatch' : 'Value does not match a pattern ${title}',
-        'rangeOverflow' : 'Value is too big, maximum allowed is ${max}',
-        'rangeUnderflow' : 'Value is too small, minimum allowed is ${min}',
-        'stepMismatch' : 'Please select proper value',
-        'tooLong' : 'Value is too long, maximum allowed is ${maxlength}',
-        'tooShort' : 'Value is too short, minimum allowed is ${minLength}',
-        'typeMismatch' : 'Bad value for ${type}',
-    }
-};
-
-const FIELDS_TO_IGNORE = [
-    'file',
-    'reset',
-    'submit',
-    'button',
-];
-
-const VALIDITY_CHECKS = [
-    'valueMissing',
-    'badInput',
-    'patternMismatch',
-    'rangeOverflow',
-    'rangeUnderflow',
-    'stepMismatch',
-    'tooLong',
-    'tooShort',
-    'typeMismatch',
-];
-
 
 export default class FormValidator {
     private __form : HTMLFormElement;
@@ -79,7 +23,9 @@ export default class FormValidator {
         this.__form = form;
         this.__validators = new Map();
         this.__options = Object.assign({}, DEFAULT_OPTIONS, options) as ValidatorOptions;
+
         this.__form.setAttribute('novalidate', 'true');
+
         if (this.__options.validateImmediately) {
             this.__form.addEventListener('blur', (event) => {
                 this.__validateField(event.target as FormField);
@@ -114,11 +60,14 @@ export default class FormValidator {
     private __validateField(field: FormField) : boolean {
         const errors = this.__getErrors(field);
 
+        field.setCustomValidity(errors.length ? 'errors' : '');
+
         window.requestAnimationFrame(() => {
             this.__hideErrors(field);
             if (errors.length) {
                 this.__showErrors(field, errors);
             }
+            this.__form.checkValidity();
         });
 
         return !errors.length;
@@ -157,7 +106,7 @@ export default class FormValidator {
     private __getErrors(field : FormField) : string[] {
         const errors = [] as string[];
 
-        if (field.disabled || FIELDS_TO_IGNORE.indexOf(field.type) !== -1) {
+        if (field.disabled || this.__options.formFieldsToIgnore.indexOf(field.type) !== -1) {
             return errors;
         } else {
             const validity = field.validity as ValidityStateDux;
@@ -187,33 +136,22 @@ export default class FormValidator {
                 });
 
             if (!validity.valid) {
-                VALIDITY_CHECKS
+                this.__options.validationChecks
                     .forEach((check : string) => {
                         if (validity[check]) {
                             errors.push(this.__fillPlaceholder(
-                                this.__options.translations[check],
+                                this.__options.translations[check] || this.__options.translations['defaultError'],
                                 placeholders
                             ));
                         }
                     });
-
-                    if (!VALIDITY_CHECKS.some((check => validity[check]))) {
-                        errors.push(this.__fillPlaceholder(
-                            this.__options.translations.defaultError,
-                            placeholders
-                        ));
-                    }
             }
             return errors;
         }
     }
 
-    private __hasField(name : string) : boolean {
-        return Object.keys(this.__form.elements).indexOf(name) !== -1;
-    }
-
     public addValidator(name : string, validator : ValidatorFunction) : void {
-        if (this.__hasField(name)) {
+        if (this.__form.elements.namedItem(name)) {
             const validators = this.__validators.get(name) || [];
             validators.push(validator);
             this.__validators.set(name, validators)
